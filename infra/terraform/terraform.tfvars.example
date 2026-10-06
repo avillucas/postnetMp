@@ -1,0 +1,12 @@
+project_id          = "postnetmp-prod"
+billing_account_id  = "XXXXXX-XXXXXX-XXXXXX"
+region              = "us-central1"
+zone                = "us-central1-a"
+notification_emails = ["devops@tuempresa.com"]
+budget_amount_usd   = 9
+mp_secret_names = [
+  "mercadopago-access-token",
+  "mercadopago-public-key",
+  "mercadopago-webhook-secret",
+]
+compute_cpu_quota_cap = 4

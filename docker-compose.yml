@@ -1,0 +1,36 @@
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  gestor-api:
+    build: ./servicio_gestor
+    env_file: .env.local
+    ports:
+      - "${GESTOR_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  gestor-worker:
+    build: ./servicio_gestor
+    command: celery -A gestor.infrastructure.celery_app worker --loglevel=INFO
+    env_file: .env.local
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  simulador-maquina:
+    build: ./simulador_maquina
+    env_file: .env.local
+    ports:
+      - "${SIMULADOR_PORT:-8001}:8001"
+    volumes:
+      - simulador-data:/data
+
+volumes:
+  simulador-data:

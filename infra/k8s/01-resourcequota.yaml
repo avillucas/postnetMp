@@ -1,0 +1,14 @@
+# Techo duro de recursos para todo el namespace: con 1 nodo e2-micro
+# (2 vCPU en ráfaga / 1 GiB RAM) hay que dejar margen para kube-system.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: free-tier-quota
+  namespace: expendedora
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: "400Mi"
+    limits.cpu: "800m"
+    limits.memory: "700Mi"
+    pods: "6"

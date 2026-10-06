@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: celery-worker-sa
+  namespace: expendedora
+  annotations:
+    # Workload Identity: vincula esta KSA a la GSA celery-worker-gsa (ver iam.tf).
+    iam.gke.io/gcp-service-account: celery-worker-gsa@${PROJECT_ID}.iam.gserviceaccount.com
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: mp-secrets
+  namespace: expendedora
+spec:
+  provider: gcp
+  parameters:
+    secrets: |
+      - resourceName: "projects/${PROJECT_ID}/secrets/mercadopago-access-token/versions/latest"
+        fileName: "MERCADOPAGO_ACCESS_TOKEN"
+      - resourceName: "projects/${PROJECT_ID}/secrets/mercadopago-public-key/versions/latest"
+        fileName: "MERCADOPAGO_PUBLIC_KEY"
+      - resourceName: "projects/${PROJECT_ID}/secrets/mercadopago-webhook-secret/versions/latest"
+        fileName: "MERCADOPAGO_WEBHOOK_SECRET"
+  secretObjects:
+    - secretName: mp-secrets-synced
+      type: Opaque
+      data:
+        - objectName: "MERCADOPAGO_ACCESS_TOKEN"
+          key: MERCADOPAGO_ACCESS_TOKEN
+        - objectName: "MERCADOPAGO_PUBLIC_KEY"
+          key: MERCADOPAGO_PUBLIC_KEY
+        - objectName: "MERCADOPAGO_WEBHOOK_SECRET"
+          key: MERCADOPAGO_WEBHOOK_SECRET
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: expendedora
+spec:
+  # Réplica fija (sin HPA): con un único nodo e2-micro, escalar horizontalmente
+  # generaría costo fuera de la capa gratuita.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      serviceAccountName: celery-worker-sa
+      containers:
+        - name: celery-worker
+          image: ${REGION}-docker.pkg.dev/${PROJECT_ID}/postnetmp-images/celery-worker:${IMAGE_TAG}
+          command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=2"]
+          envFrom:
+            - secretRef:
+                name: mp-secrets-synced
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://redis.expendedora.svc.cluster.local:6379/0"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://redis.expendedora.svc.cluster.local:6379/1"
+          resources:
+            requests:
+              cpu: "80m"
+              memory: "120Mi"
+            limits:
+              cpu: "250m"
+              memory: "220Mi"
+          volumeMounts:
+            - name: mp-secrets
+              mountPath: "/mnt/secrets"
+              readOnly: true
+      volumes:
+        - name: mp-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "mp-secrets"

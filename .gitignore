@@ -1,0 +1,23 @@
+# Variables de entorno: nunca se versionan credenciales
+.env
+.env.*
+!.env.local.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Datos generados por el simulador
+simulador_maquina/data/
+*.log
+
+# IDE
+.vscode/
+.idea/

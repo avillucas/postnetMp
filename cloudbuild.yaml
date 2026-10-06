@@ -1,0 +1,54 @@
+steps:
+  # 1. Build imagen de la API de pagos (FastAPI)
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/postnetmp-images/payment-api:$SHORT_SHA", "./api"]
+
+  # 2. Build imagen del worker Celery
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/postnetmp-images/celery-worker:$SHORT_SHA", "./worker"]
+
+  # 3. Push de ambas imágenes a Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/postnetmp-images/payment-api:$SHORT_SHA"]
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/postnetmp-images/celery-worker:$SHORT_SHA"]
+
+  # 4. Deploy a Cloud Run (escala a cero, techo de 2 instancias)
+  - name: "gcr.io/google.com/cloudsdk/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - payment-api
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/postnetmp-images/payment-api:$SHORT_SHA
+      - --region=${_REGION}
+      - --min-instances=0
+      - --max-instances=2
+      - --no-cpu-boost
+
+  # 5. Deploy del worker Celery + Redis al clúster GKE zonal
+  - name: "gcr.io/google.com/cloudsdk/cloud-sdk"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud container clusters get-credentials postnetmp-zonal --zone="${_ZONE}" --project="$PROJECT_ID"
+        export PROJECT_ID="$PROJECT_ID" REGION="${_REGION}" IMAGE_TAG="$SHORT_SHA"
+        for f in infra/k8s/*.yaml; do
+          envsubst '$${PROJECT_ID} $${REGION} $${IMAGE_TAG}' < "$f" | kubectl apply -f -
+        done
+
+substitutions:
+  _REGION: us-central1
+  _ZONE: us-central1-a
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_MEDIUM"
+
+# Cap duro por build: ayuda a no exceder los 120 min/día de Free Tier aunque
+# haya varios pushes seguidos.
+timeout: "600s"
+
+serviceAccount: "projects/$PROJECT_ID/serviceAccounts/cicd-deployer-sa@$PROJECT_ID.iam.gserviceaccount.com"
